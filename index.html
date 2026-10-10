@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Squad İstihbarat Haritası</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: tactical second-monitor instrument. Left rail: identity, tab bar with icons, one task per tab.
+   Right: zoomable map canvas. Deliberately single dark look (sits beside a game). */
+:root{
+  color-scheme:dark;
+  --bg:#0A0E13; --panel:#10151C; --panel2:#161D26; --line:#222B37; --line2:#2E3947;
+  --fg:#E7ECF2; --muted:#8592A3; --faint:#5C6878;
+  --mortar:#F5B53D; --target:#FF6B5A; --ok:#3DDC97; --ring:#5B8CFF;
+  --k-dolu:#FF5A5F; --k-kamp:#FF9F43; --k-arac:#A78BFA; --k-temiz:#3DDC97;
+  --p0:#F5B53D; --p1:#38BDF8; --p2:#C084FC;
+  --grid-major:#2E3947; --grid-minor:#1A222C;
+  --f-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:8px;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px}
+.app{height:100%;display:grid;grid-template-columns:332px minmax(0,1fr)}
+@media (max-width:760px){.app{grid-template-columns:1fr;grid-template-rows:auto minmax(420px,1fr);height:auto;min-height:100%}}
+aside{background:var(--panel);border-right:1px solid var(--line);padding-inline:16px;padding-block:16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;min-width:0}
+.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:8px}
+.brand .i{width:22px;height:22px;color:var(--mortar)}
+h1{font-family:var(--f-display);font-weight:700;font-size:22px;letter-spacing:.04em;text-transform:uppercase;margin:0;line-height:1}
+.lbl{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.blk{display:flex;flex-direction:column;gap:6px}
+.sync{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);max-width:100%}
+.sync span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sync i{width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;flex:none}
+.sync.on i{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)} .sync.off i{background:var(--target)}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.row2>*{min-width:0}
+select,input{box-sizing:border-box;font:500 14px var(--f-body);background:var(--panel2);color:var(--fg);border:1px solid var(--line2);border-radius:var(--r);padding:8px 10px;width:100%;min-width:0}
+select:hover,input:hover{border-color:var(--faint)}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--mortar);outline-offset:2px}
+/* sekmeler */
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:4px;background:var(--bg);border:1px solid var(--line);border-radius:calc(var(--r) + 4px)}
+.tabs button{display:flex;flex-direction:column;align-items:center;gap:4px;font:600 12px var(--f-body);background:transparent;color:var(--muted);border:0;border-radius:var(--r);padding:8px 2px 7px;cursor:pointer;letter-spacing:.02em}
+.tabs button .i{width:18px;height:18px}
+.tabs button:hover{color:var(--fg);background:var(--panel2)}
+.tabs button[aria-selected="true"]{background:var(--panel2);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line2)}
+.tabs button[aria-selected="true"] .i{color:var(--mortar)}
+.pane{display:flex;flex-direction:column;gap:12px}
+.hint{margin:0;font-size:13px;color:var(--muted);line-height:1.45}
+.hint b{color:var(--fg);font-weight:600}
+/* işaret türleri */
+.seg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.seg button{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;font:600 13px var(--f-body);background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);padding:10px 2px 8px;cursor:pointer}
+.seg button .i{width:20px;height:20px;color:var(--kc)}
+.seg button small{position:absolute;top:4px;right:6px;font:500 10px var(--f-mono);color:var(--faint)}
+.seg button:hover{border-color:var(--line2)}
+.seg button[aria-pressed="true"]{border-color:var(--kc);background:color-mix(in srgb,var(--kc) 14%,var(--panel2))}
+.cnt{display:flex;gap:6px;align-items:center}
+.cnt button{flex:1;font:600 13px var(--f-mono);background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);padding:6px 0;cursor:pointer}
+.cnt button[aria-pressed="true"]{border-color:var(--fg);background:var(--line2)}
+.cnt .lbl{margin-right:4px}
+/* havan */
+.readout{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:calc(var(--r) + 4px);background:var(--panel2);border:1px solid var(--line)}
+.read{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.big{font-family:var(--f-mono);font-weight:700;font-size:56px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.big small{font-family:var(--f-body);font-size:20px;color:var(--muted);margin-left:4px;font-weight:500}
+.status{display:inline-flex;align-items:center;gap:6px;font:700 12px var(--f-body);letter-spacing:.08em;text-transform:uppercase;padding:5px 10px;border-radius:999px;background:var(--line);color:var(--muted);align-self:flex-start}
+.status.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.status.bad{background:color-mix(in srgb,var(--target) 16%,transparent);color:var(--target)}
+/* butonlar */
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:600 13px var(--f-body);background:var(--panel2);color:var(--fg);border:1px solid var(--line2);border-radius:var(--r);padding:8px 11px;cursor:pointer;width:100%;box-sizing:border-box}
+.btns .btn{width:auto;flex:1}
+.btn:hover{border-color:var(--faint);background:var(--line)}
+.btn.primary{background:var(--mortar);border-color:var(--mortar);color:#14100A}
+.btn.primary:hover{background:color-mix(in srgb,var(--mortar) 88%,#fff)}
+.btn.on{background:var(--mortar);border-color:var(--mortar);color:#14100A}
+.btn.danger{color:var(--target);border-color:color-mix(in srgb,var(--target) 45%,transparent)}
+.btn.danger:hover{background:color-mix(in srgb,var(--target) 12%,transparent)}
+.btn.danger.armed{background:var(--target);color:#14100A}
+/* işaret listesi */
+.grow{flex:1 1 auto;min-height:80px}
+ul.marks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+ul.marks li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 10px;border-radius:var(--r);background:var(--panel2);border:1px solid transparent;cursor:pointer;font-size:13px}
+ul.marks li:hover{border-color:var(--line2)}
+ul.marks li .dot{width:10px;height:10px;border-radius:3px;transform:rotate(45deg)}
+ul.marks li .who{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+ul.marks li.stale{opacity:.45}
+.empty{color:var(--muted);font-size:13px;padding:10px;border:1px dashed var(--line2);border-radius:var(--r);text-align:center}
+/* analiz açıklaması */
+.layerinfo{font-size:13px;color:var(--muted);line-height:1.5;display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:calc(var(--r) + 2px);background:var(--panel2);border:1px solid var(--line)}
+.layerinfo:empty{display:none}
+.layerinfo b{color:var(--fg);font-weight:600}
+.scale{height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(255,220,60,.35),rgba(255,150,40,.6),rgba(230,40,30,.8))}
+.scalelbl{display:flex;justify-content:space-between;font:500 11px var(--f-mono)}
+/* alt kısım */
+details.more{border-top:1px solid var(--line);padding-top:12px;margin-top:auto}
+details.more summary{display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;list-style:none}
+details.more summary::-webkit-details-marker{display:none}
+details.more[open]>.blk{margin-top:12px;gap:12px}
+.help{display:flex;flex-direction:column;gap:6px;color:var(--muted);line-height:1.5;font-size:13px}
+.help b{color:var(--fg);font-weight:600}
+kbd{font:500 11px var(--f-mono);padding:1px 5px;border-radius:4px;border:1px solid var(--line2);background:var(--panel2);color:var(--fg)}
+/* harita */
+.stage{position:relative;min-width:0;min-height:0;overflow:hidden;cursor:crosshair;background:var(--bg)}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+.cursor{position:absolute;right:12px;bottom:12px;color:var(--fg);background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);padding:4px 9px;border-radius:999px;font:500 12px var(--f-mono);pointer-events:none;font-variant-numeric:tabular-nums}
+.cursor:empty{display:none}
+.toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line2);box-shadow:0 8px 24px rgba(0,0,0,.45);padding:8px 14px;border-radius:999px;font-size:13px;font-weight:500;pointer-events:none}
+.toast::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--mortar)}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:no-preference){.btn,.tabs button,.seg button{transition:background-color .15s,border-color .15s,color .15s}}
+</style>
+<script>
+// Takım odası: linkteki #oda-... kısmı. Yoksa yeni bir oda kodu üretilir.
+(function(){
+  let m=location.hash.match(/^#oda-([A-Za-z0-9]{12,64})$/);
+  if(!m){ const a="abcdefghijkmnpqrstuvwxyz23456789"; let r=""; const b=crypto.getRandomValues(new Uint8Array(16)); for(const x of b) r+=a[x%a.length];
+    history.replaceState(null,"","#oda-"+r); m=[0,r]; }
+  window.SQUAD_ROOM=m[1];
+  window.squadDBReady=new Promise(res=>{ window.__squadResolve=res; setTimeout(()=>res(null),15000); });
+})();
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { getFirestore, collection, doc, addDoc, deleteDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+const firebaseConfig = {
+  apiKey: "AIzaSyCwBOut5SP67tfsCJ752aUW1OwInnpk2Mw",
+  authDomain: "squad-harita.firebaseapp.com",
+  projectId: "squad-harita",
+  storageBucket: "squad-harita.firebasestorage.app",
+  messagingSenderId: "966664923566",
+  appId: "1:966664923566:web:1b9ae2cf3c4688ae48403f"
+};
+try{
+  const app=initializeApp(firebaseConfig);
+  await signInAnonymously(getAuth(app));
+  const fs=getFirestore(app), base=["rooms",window.SQUAD_ROOM];
+  const wrapQ=s=>({docs:s.docs.map(d=>({id:d.id,data:()=>d.data()}))});
+  window.__squadResolve({
+    collection(name){ const ref=collection(fs,...base,name); return {
+      add:d=>addDoc(ref,d),
+      doc:id=>({ delete:()=>deleteDoc(doc(fs,...base,name,id)) }),
+      onSnapshot:(next,err)=>onSnapshot(ref,s=>next(wrapQ(s)),err) }; },
+    doc(path){ const [c,id]=path.split("/"); const ref=doc(fs,...base,c,id); return {
+      set:d=>setDoc(ref,d),
+      onSnapshot:(next,err)=>onSnapshot(ref,s=>next({exists:s.exists(),data:()=>s.data()}),err) }; }
+  });
+}catch(e){ console.error(e); window.__squadResolve(null); }
+</script>
+
+</head>
+<body>
+
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.8-6.5-11.2a6.5 6.5 0 1 1 13 0C18.5 15.2 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.3"/></symbol>
+  <symbol id="i-mortar" viewBox="0 0 24 24"><path d="M5 19l9-12"/><path d="M12.5 5.5l3 3"/><path d="M3 21h10"/><path d="M8 21l2-5"/><circle cx="19" cy="5" r="2"/></symbol>
+  <symbol id="i-plane" viewBox="0 0 24 24"><path d="M10.5 3.5c0-.8.7-1.5 1.5-1.5s1.5.7 1.5 1.5V9l7 4v2l-7-2v5l2.5 2v1.5L12 20.5 8.5 21.5V20l2.5-2v-5l-7 2v-2l7-4z"/></symbol>
+  <symbol id="i-zone" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3 2.6"/><circle cx="14" cy="10" r="4.5"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.6a3.2 3.2 0 0 1 0 6.3"/><path d="M18 14.3c1.8.8 3 2.7 3 5.7"/></symbol>
+  <symbol id="i-tent" viewBox="0 0 24 24"><path d="M2.5 20.5L12 4l9.5 16.5z"/><path d="M12 4v16.5"/><path d="M9 20.5l3-5 3 5"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16v-3.5l2-5h12l2 5V16"/><path d="M3 16h18v2.5H3z"/><circle cx="7.5" cy="18.5" r="1.6"/><circle cx="16.5" cy="18.5" r="1.6"/><path d="M5.5 12.5h13"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16.5 9.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+</svg>
+<div class="app" lang="tr">
+<aside>
+  <div class="head">
+    <div class="brand"><svg class="i" aria-hidden="true"><use href="#i-logo"/></svg><h1>Squad Harita</h1></div>
+    <span class="sync" id="sync" title="Bağlantı durumu"><i></i><span>Bağlanıyor…</span></span>
+  </div>
+
+  <button class="btn" id="copyLink" type="button"><svg class="i" aria-hidden="true"><use href="#i-pin"/></svg><span>Takım linkini kopyala</span></button>
+
+  <div class="row2">
+    <div class="blk"><label class="lbl" for="mapsel">Harita</label>
+      <select id="mapsel">
+        <option>Erangel</option><option>Miramar</option><option>Taego</option><option>Vikendi</option><option>Rondo</option>
+        <option>Deston</option><option>Sanhok</option><option>Paramo</option><option>Karakin</option>
+      </select></div>
+    <div class="blk"><label class="lbl" for="whosel">Ben</label>
+      <select id="whosel"><option value="">Seç…</option><option>Heimdallre</option><option>1brahim-exe</option><option>RevulatioNon</option></select></div>
+  </div>
+
+  <div class="tabs" role="tablist" id="tabs">
+    <button type="button" role="tab" data-t="isaret"><svg class="i" aria-hidden="true"><use href="#i-pin"/></svg><span>İşaret</span></button>
+    <button type="button" role="tab" data-t="havan"><svg class="i" aria-hidden="true"><use href="#i-mortar"/></svg><span>Havan</span></button>
+    <button type="button" role="tab" data-t="inis"><svg class="i" aria-hidden="true"><use href="#i-plane"/></svg><span>İniş</span></button>
+    <button type="button" role="tab" data-t="cember"><svg class="i" aria-hidden="true"><use href="#i-zone"/></svg><span>Çember</span></button>
+  </div>
+
+  <!-- İŞARET -->
+  <section class="pane" data-pane="isaret">
+    <p class="hint"><b>Sağ tık</b> ile işaret koy, işaretin üstüne sağ tık ile sil. Takım anında görür.</p>
+    <div class="seg k4" id="kinds" role="group" aria-label="İşaret türü">
+      <button type="button" data-k="dolu" style="--kc:var(--k-dolu)"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg><span>Dolu</span><small>1</small></button>
+      <button type="button" data-k="kamp" style="--kc:var(--k-kamp)"><svg class="i" aria-hidden="true"><use href="#i-tent"/></svg><span>Kamp</span><small>2</small></button>
+      <button type="button" data-k="arac" style="--kc:var(--k-arac)"><svg class="i" aria-hidden="true"><use href="#i-car"/></svg><span>Araç</span><small>3</small></button>
+      <button type="button" data-k="temiz" style="--kc:var(--k-temiz)"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span>Temiz</span><small>4</small></button>
+    </div>
+    <div class="cnt" id="counts" role="group" aria-label="Kişi sayısı">
+      <span class="lbl" style="align-self:center">Kişi</span><button type="button" data-c="0">?</button><button type="button" data-c="1">1</button><button type="button" data-c="2">2</button><button type="button" data-c="3">3</button><button type="button" data-c="4">4</button>
+    </div>
+    <div class="blk grow">
+      <span class="lbl">İşaretler</span>
+      <ul class="marks" id="list"></ul>
+    </div>
+    <div class="row2">
+      <div class="blk"><label class="lbl" for="ttl">İşaret ömrü</label>
+        <select id="ttl"><option value="3">3 dk</option><option value="5" selected>5 dk</option><option value="10">10 dk</option><option value="999">Maç sonu</option></select></div>
+      <div class="blk"><span class="lbl">&nbsp;</span><button class="btn danger" id="newmatch" type="button"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg><span>Yeni maç</span></button></div>
+    </div>
+  </section>
+
+  <!-- HAVAN -->
+  <section class="pane" data-pane="havan" hidden>
+    <p class="hint"><b>Sol tık</b>: havanın yeri. İşaretin üstüne <b>sol tık</b> veya <b>Shift + sol tık</b>: hedef.</p>
+    <div class="readout"><span class="lbl">Havana girilecek mesafe</span><div class="read"><div class="big" id="aim">—<small>m</small></div></div><span class="status" id="status">Havanı koy</span></div>
+    <div class="row2">
+      <div class="blk"><label class="lbl" for="hdiff">Hedef ne kadar yüksek (m)</label><input id="hdiff" type="number" min="0" max="300" step="5" value="0"></div>
+      <div class="blk"><span class="lbl">&nbsp;</span><button class="btn" id="zoomM" type="button"><svg class="i" aria-hidden="true"><use href="#i-crosshair"/></svg><span>Yakınlaş</span></button></div>
+    </div>
+    <p class="hint">Menzil 121–700 m (mavi halkalar). Hedef yüksekteyse yükseklik farkı mesafeye eklenir.</p>
+  </section>
+
+  <!-- İNİŞ -->
+  <section class="pane" data-pane="inis" hidden>
+    <p class="hint">Uçak rotasını çiz: önce uçağın girdiği yere, sonra çıktığı yere <b>sol tık</b>.</p>
+  </section>
+
+  <!-- ÇEMBER -->
+  <section class="pane" data-pane="cember" hidden>
+    <div class="blk" id="zviewctl"><label class="lbl" for="zview">Göster</label>
+      <select id="zview">
+        <option value="yon">Yeni çember hangi yöne kayar</option>
+        <option value="guven">Bulunduğum yer güvende kalır mı</option>
+        <option value="fin">Geçmiş maçların son çemberleri</option>
+        <option value="late">İlk 3 takımın oyun sonu konumları</option>
+      </select></div>
+    <div class="row2" id="zonectl">
+      <div class="blk"><label class="lbl" for="zphase">Şu anki beyaz çember</label><select id="zphase"></select></div>
+      <div class="blk"><span class="lbl">&nbsp;</span><button class="btn primary" id="zoneBtn" type="button"><svg class="i" aria-hidden="true"><use href="#i-crosshair"/></svg><span>Merkezi seç</span></button></div>
+    </div>
+  </section>
+
+  <!-- İniş + Çember ortak: rota ve açıklama -->
+  <div class="btns" id="landctl" hidden>
+    <button class="btn primary" id="routeBtn" type="button"><svg class="i" aria-hidden="true"><use href="#i-plane"/></svg><span>Rotayı çiz</span></button>
+    <button class="btn" id="routeClr" type="button"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg><span>Sil</span></button>
+  </div>
+  <div class="layerinfo" id="layerinfo"></div>
+  <select id="layer" hidden aria-hidden="true"><option value=""></option><option value="land"></option><option value="fin"></option><option value="late"></option><option value="zone"></option></select>
+
+  <details class="more">
+    <summary><svg class="i" aria-hidden="true"><use href="#i-sliders"/></svg><span>Görünüm ve kısayollar</span></summary>
+    <div class="blk">
+      <div class="row2">
+        <div class="blk"><label class="lbl" for="gridop">Izgara</label>
+          <select id="gridop"><option value="0.35">İnce</option><option value="0.7" selected>Normal</option><option value="1">Belirgin</option></select></div>
+        <div class="blk"><span class="lbl">&nbsp;</span><button class="btn" id="fit" type="button"><svg class="i" aria-hidden="true"><use href="#i-expand"/></svg><span>Tüm harita</span></button></div>
+      </div>
+      <div class="help">
+        <span><b>Tekerlek</b> yakınlaş · <b>sürükle</b> kaydır</span><span><kbd>1</kbd>–<kbd>4</kbd> işaret türü · <kbd>F</kbd> tüm harita · <kbd>Z</kbd> havan · <kbd>Esc</kbd> hedefi bırak</span>
+        <span>Büyük kare 1 km, küçük kare 100 m.</span>
+      </div>
+    </div>
+  </details>
+</aside>
+
+<div class="stage" id="stage">
+  <canvas id="cv" aria-label="Kilometre ızgarası. Sağ tık işaret, sol tık havan."></canvas>
+  <div class="cursor" id="cur"></div>
+  <div class="toast" id="toast" hidden></div>
+</div>
+</div>
+
+<script>
+(function(){
+const MIN=121, MAX=700;
+const KINDS={dolu:"Dolu",kamp:"Kamp",arac:"Araç",temiz:"Temiz"};
+const PLAYERS=["Heimdallre","1brahim-exe","RevulatioNon"];
+const $=id=>document.getElementById(id);
+const cv=$("cv"), ctx=cv.getContext("2d"), stage=$("stage");
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C={}; ["--bg","--grid-major","--grid-minor","--fg","--muted","--mortar","--target","--ring","--ok","--k-dolu","--k-kamp","--k-arac","--k-temiz","--p0","--p1","--p2"].forEach(k=>C[k]=css(k));
+
+const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+
+let me=ls.get("sq-me",""), kind=ls.get("sq-kind","dolu"), count=+ls.get("sq-count","0");
+// PUBG koordinat aralığı (km): documentation.pubg.com Location nesnesi; Rondo örnek veriden (0-8160 m)
+const MAPS={Erangel:8.16,Miramar:8.16,Taego:8.16,Vikendi:8.16,Rondo:8.16,Deston:8.16,Sanhok:4.08,Paramo:3.06,Karakin:2.04};
+let mapKey=MAPS[ls.get("sq-map","")]?ls.get("sq-map",""):"Erangel";
+let sizeKm=MAPS[mapKey], ttlMin=+ls.get("sq-ttl","5"), gridOp=+ls.get("sq-grid","0.7");
+const imgs={};
+function mapImg(k){
+  if(!imgs[k]){ const im=new Image(); im.onload=()=>draw(); im.onerror=()=>{ im.failed=true; }; im.src="maps/"+k+".jpg"; imgs[k]=im; }
+  return imgs[k];
+}
+function setMap(k){
+  if(!MAPS[k]) return; const changed=k!==mapKey;
+  mapKey=k; sizeKm=MAPS[k]; ls.set("sq-map",k); $("mapsel").value=k;
+  if(changed){ mortar=null; freeTarget=null; targetId=null; route=null; routeMode=0; heat=null; zone=null; zoneMode=false; }
+  mapImg(k); if(typeof renderLayerInfo==="function"&&intel) renderLayerInfo(); fit(); updateAim();
+}
+let W=0,H=0,dpr=1, view={s:.1,ox:0,oy:0};
+let mortar=null, targetId=null, freeTarget=null;
+let marks=new Map();          // id -> {x,y,kind,count,by,t}
+let db=null, marksCol=null, stateDoc=null, shared=false;
+
+$("ttl").value=String(ttlMin);
+
+// ---------- UI state ----------
+function pressGroup(id,attr,val){ [...$(id).children].forEach(b=>b.setAttribute("aria-pressed",String(b.dataset[attr]===String(val)))); }
+function renderControls(){ $("whosel").value=me; pressGroup("kinds","k",kind); pressGroup("counts","c",count); }
+$("whosel").addEventListener("change",()=>{ me=$("whosel").value; ls.set("sq-me",me); });
+$("kinds").onclick=e=>{const b=e.target.closest("button"); if(!b) return; kind=b.dataset.k; ls.set("sq-kind",kind); renderControls();};
+$("counts").onclick=e=>{const b=e.target.closest("button"); if(!b) return; count=+b.dataset.c; ls.set("sq-count",count); renderControls();};
+renderControls();
+
+let toastT=null;
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,2200); }
+function setSync(state,text){ const s=$("sync"); s.className="sync "+state; s.lastElementChild.textContent=text; }
+
+// ---------- geometry ----------
+function resize(){ const r=stage.getBoundingClientRect(); dpr=window.devicePixelRatio||1; W=r.width; H=r.height; cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); draw(); }
+function fit(){ const m=sizeKm*1000,p=24; view.s=Math.min((W-p*2)/m,(H-p*2)/m); view.ox=(W-m*view.s)/2; view.oy=(H-m*view.s)/2; draw(); }
+const toS=(x,y)=>[x*view.s+view.ox,y*view.s+view.oy];
+const toW=(sx,sy)=>[(sx-view.ox)/view.s,(sy-view.oy)/view.s];
+const inMap=p=>p[0]>=0&&p[1]>=0&&p[0]<=sizeKm*1000&&p[1]<=sizeKm*1000;
+const ageMin=m=>Math.max(0,(Date.now()-m.t)/60000);
+const visible=m=>ttlMin>=999||ageMin(m)<ttlMin;
+const alphaOf=m=>ttlMin>=999?1:Math.max(.25,1-ageMin(m)/ttlMin*.75);
+const fmtAge=m=>{const a=ageMin(m); return a<1?Math.round(a*60)+" sn":Math.floor(a)+" dk";};
+function hitMark(sx,sy){ let best=null,bd=14; marks.forEach((m,id)=>{ if(!visible(m)) return; const [x,y]=toS(m.x,m.y); const d=Math.hypot(x-sx,y-sy); if(d<bd){bd=d;best=id;} }); return best; }
+function currentTarget(){ if(targetId&&marks.has(targetId)) return marks.get(targetId); return freeTarget; }
+
+// ---------- draw ----------
+function draw(){
+  if(!W) return; const m=sizeKm*1000;
+  ctx.fillStyle=C["--bg"]; ctx.fillRect(0,0,W,H);
+  const [x0,y0]=toS(0,0),[x1,y1]=toS(m,m);
+  const im=mapImg(mapKey);
+  if(im.complete&&im.naturalWidth){ ctx.imageSmoothingQuality="high"; ctx.drawImage(im,x0,y0,x1-x0,y1-y0); }
+  // grid drawn light over the map image (game-style)
+  ctx.save(); ctx.globalAlpha=gridOp;
+  if(view.s*100>=5){ ctx.strokeStyle="rgba(255,255,255,.22)"; ctx.lineWidth=1; ctx.beginPath();
+    for(let v=0;v<=m;v+=100){ if(v%1000===0) continue; const [sx]=toS(v,0),[,sy]=toS(0,v);
+      ctx.moveTo(Math.round(sx)+.5,y0); ctx.lineTo(Math.round(sx)+.5,y1); ctx.moveTo(x0,Math.round(sy)+.5); ctx.lineTo(x1,Math.round(sy)+.5); }
+    ctx.stroke(); }
+  ctx.strokeStyle="rgba(255,255,255,.55)"; ctx.lineWidth=1.5; ctx.beginPath();
+  for(let v=0;v<=m;v+=1000){ const [sx]=toS(v,0),[,sy]=toS(0,v); ctx.moveTo(sx,y0); ctx.lineTo(sx,y1); ctx.moveTo(x0,sy); ctx.lineTo(x1,sy); }
+  ctx.stroke(); ctx.restore();
+  drawLayer(x0,y0,x1,y1);
+  ctx.fillStyle=C["--muted"]; ctx.font="11px JetBrains Mono, monospace";
+  for(let k=0;k<sizeKm;k++){ if(k*1000+500>m) continue; const [sx]=toS(k*1000+500,0),[,sy]=toS(0,k*1000+500);
+    ctx.textAlign="center"; ctx.fillText(String(k+1),sx,Math.max(12,y0-6)); ctx.textAlign="right"; ctx.fillText(String(k+1),Math.max(14,x0-6),sy+4); }
+
+  if(tab==="havan"&&mortar){ const [mx,my]=toS(...mortar);
+    [[MAX,[8,5]],[MIN,[4,4]]].forEach(([rr,dash])=>{
+      ctx.setLineDash([]); ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(mx,my,rr*view.s,0,Math.PI*2); ctx.stroke();
+      ctx.setLineDash(dash); ctx.strokeStyle=C["--ring"]; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(mx,my,rr*view.s,0,Math.PI*2); ctx.stroke(); });
+    ctx.setLineDash([]); }
+
+  const tg=currentTarget();
+  if(tab==="havan"&&mortar&&tg){ const [mx,my]=toS(...mortar),[tx,ty]=toS(tg.x,tg.y);
+    ctx.strokeStyle="rgba(0,0,0,.6)"; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(tx,ty); ctx.stroke();
+    ctx.strokeStyle=C["--fg"]; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(tx,ty); ctx.stroke(); }
+
+  // marks
+  marks.forEach((mk,id)=>{
+    if(!visible(mk)) return;
+    const [x,y]=toS(mk.x,mk.y); const col=C["--k-"+mk.kind]||C["--fg"];
+    ctx.globalAlpha=alphaOf(mk);
+    const r= id===targetId?13:10;
+    ctx.shadowColor="rgba(0,0,0,.55)"; ctx.shadowBlur=6; ctx.fillStyle=col; ctx.strokeStyle="#FFFFFF"; ctx.lineWidth=2;
+    ctx.beginPath();
+    if(mk.kind==="temiz"){ ctx.arc(x,y,r-2,0,Math.PI*2); }
+    else if(mk.kind==="arac"){ ctx.rect(x-r+2,y-r+2,(r-2)*2,(r-2)*2); }
+    else if(mk.kind==="kamp"){ ctx.moveTo(x,y-r); ctx.lineTo(x+r,y+r-3); ctx.lineTo(x-r,y+r-3); ctx.closePath(); }
+    else { ctx.moveTo(x,y-r); ctx.lineTo(x+r,y); ctx.lineTo(x,y+r); ctx.lineTo(x-r,y); ctx.closePath(); }
+    ctx.fill(); ctx.shadowBlur=0; ctx.stroke();
+    if(id===targetId){ ctx.strokeStyle=C["--fg"]; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,r+5,0,Math.PI*2); ctx.stroke(); }
+    // label
+    const pi=PLAYERS.indexOf(mk.by);
+    const label=(KINDS[mk.kind]||"")+(mk.count?" "+mk.count:"")+" · "+fmtAge(mk);
+    ctx.font="600 12px Barlow, system-ui, sans-serif"; ctx.textAlign="left";
+    const tw=ctx.measureText(label).width, lx=x+r+6, ly=y-10;
+    ctx.fillStyle="rgba(10,14,19,.9)"; ctx.beginPath(); (ctx.roundRect?ctx.roundRect(lx,ly,tw+16,20,10):ctx.rect(lx,ly,tw+16,20)); ctx.fill();
+    ctx.fillStyle=pi>=0?C["--p"+pi]:C["--fg"]; ctx.beginPath(); ctx.arc(lx+8,y,3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=C["--fg"]; ctx.fillText(label,lx+14,y+4);
+    ctx.globalAlpha=1;
+  });
+
+  if(tab==="havan"&&freeTarget&&!targetId){ const [x,y]=toS(freeTarget.x,freeTarget.y); ctx.strokeStyle=C["--target"]; ctx.lineWidth=2.5; ctx.beginPath();
+    ctx.moveTo(x-9,y); ctx.lineTo(x+9,y); ctx.moveTo(x,y-9); ctx.lineTo(x,y+9); ctx.stroke(); }
+  if(tab==="havan"&&mortar){ const [x,y]=toS(...mortar); ctx.fillStyle=C["--mortar"]; ctx.beginPath(); ctx.arc(x,y,7,0,Math.PI*2); ctx.fill(); ctx.strokeStyle=C["--bg"]; ctx.lineWidth=2; ctx.stroke(); }
+}
+
+// ---------- readouts ----------
+function updateAim(){
+  const st=$("status"), tg=currentTarget();
+  if(!mortar||!tg){ $("aim").innerHTML='—<small>m</small>'; st.className="status"; st.textContent=mortar?"Hedef seç":"Havanı koy"; draw(); return; }
+  const h=Math.max(0,+$("hdiff").value||0), d=Math.hypot(tg.x-mortar[0],tg.y-mortar[1])+h;
+  $("aim").innerHTML=Math.round(d)+'<small>m</small>';
+  if(d<MIN){st.className="status bad"; st.textContent="Çok yakın";}
+  else if(d>MAX){st.className="status bad"; st.textContent="+"+Math.round(d-MAX)+" m menzil dışı";}
+  else {st.className="status ok"; st.textContent="Menzilde";}
+  draw();
+}
+function renderList(){
+  const ul=$("list"); const arr=[...marks.entries()].sort((a,b)=>b[1].t-a[1].t);
+  if(!arr.length){ ul.innerHTML='<li class="empty" style="cursor:default;display:block">Henüz işaret yok. Haritada sağ tıkla.</li>'; return; }
+  ul.innerHTML="";
+  arr.forEach(([id,mk])=>{
+    const li=document.createElement("li"); if(!visible(mk)) li.className="stale";
+    const dot=document.createElement("span"); dot.className="dot"; dot.style.background=`var(--k-${mk.kind})`;
+    const txt=document.createElement("span");
+    const km=`${(mk.x/1000).toFixed(1)}/${(mk.y/1000).toFixed(1)} km`;
+    txt.textContent=`${KINDS[mk.kind]||"?"}${mk.count?" "+mk.count:""} · ${km}`;
+    const who=document.createElement("span"); who.className="who"; who.textContent=`${mk.by||"?"} · ${fmtAge(mk)}`;
+    li.append(dot,txt,who);
+    li.onclick=()=>{ targetId=id; freeTarget=null; const [sx,sy]=toS(mk.x,mk.y); if(sx<0||sy<0||sx>W||sy>H){ view.ox=W/2-mk.x*view.s; view.oy=H/2-mk.y*view.s; } updateAim(); };
+    ul.appendChild(li);
+  });
+}
+setInterval(()=>{ renderList(); draw(); },5000);
+
+// ---------- data ----------
+async function addMark(p){
+  if(!me){ toast("Önce üstteki 'Ben' kutusundan adını seç"); $("whosel").focus(); return; }
+  const mk={x:Math.round(p[0]),y:Math.round(p[1]),kind,count,by:me,t:Date.now()};
+  if(shared){ try{ await marksCol.add(mk); }catch(e){ handleWriteErr(e); } }
+  else { marks.set("local-"+Math.random().toString(36).slice(2),mk); renderList(); draw(); }
+}
+async function removeMark(id){
+  if(targetId===id){ targetId=null; }
+  if(shared&&!id.startsWith("local-")){ try{ await marksCol.doc(id).delete(); }catch(e){ handleWriteErr(e); } }
+  else { marks.delete(id); renderList(); updateAim(); }
+}
+function handleWriteErr(e){
+  if(e&&e.code==="permission-denied"){ toast("Veritabanı izni yok; sayfayı yenile"); return; }
+  if(e&&e.code==="invalid_argument"){ toast("Bu haritaya yazma iznin yok; sahibi seni Editor olarak eklemeli"); }
+  else if(e&&e.code==="quota_exceeded"){ toast("İşaret kapasitesi doldu; 'Yeni maç' ile temizle"); }
+  else toast("Kaydedilemedi, tekrar dene");
+}
+async function setMapShared(v){
+  if(shared){ try{ await stateDoc.set({map:v,sizeKm:MAPS[v],route:route&&mapKey===v?route:null,zone:zone&&mapKey===v?zone:null}); }catch(e){ handleWriteErr(e); } }
+}
+
+let armed=null;
+$("newmatch").onclick=async()=>{
+  const b=$("newmatch");
+  if(!armed){ b.classList.add("armed"); b.textContent="Emin misin? Tekrar tıkla"; armed=setTimeout(()=>{armed=null;b.classList.remove("armed");b.textContent="Yeni maç: tüm işaretleri sil";},3000); return; }
+  clearTimeout(armed); armed=null; b.classList.remove("armed"); b.textContent="Yeni maç: tüm işaretleri sil";
+  const ids=[...marks.keys()]; targetId=null; freeTarget=null;
+  for(const id of ids){ await removeMark(id); }
+  toast(ids.length+" işaret silindi");
+};
+
+async function connect(){
+  try{ db=await window.squadDBReady; }catch(e){ db=null; }
+  if(!db){ setSync("off","Bağlanamadı: işaretler sadece bu ekranda"); return; }
+  marksCol=db.collection("marks"); stateDoc=db.doc("state/current");
+  shared=true; setSync("on","Canlı: takımla paylaşılıyor");
+  marksCol.onSnapshot(snap=>{
+    const next=new Map(); snap.docs.forEach(d=>{ const v=d.data(); if(v&&typeof v.x==="number"&&typeof v.y==="number") next.set(d.id,{x:v.x,y:v.y,kind:String(v.kind||""),count:+v.count||0,by:String(v.by||""),t:+v.t||0}); });
+    marks=next; if(targetId&&!marks.has(targetId)) targetId=null; renderList(); updateAim();
+  },e=>{ shared=false; setSync("off","Bağlantı koptu: sayfayı yenile"); });
+  stateDoc.onSnapshot(s=>{ const v=s.exists?s.data():null; const k=v&&typeof v.map==="string"?v.map:null; if(k&&MAPS[k]&&k!==mapKey){ setMap(k); toast("Harita: "+k); }
+    const r=v&&Array.isArray(v.route)&&v.route.length===4&&v.route.every(n=>typeof n==="number")?v.route:null;
+    if(k===mapKey&&JSON.stringify(r)!==JSON.stringify(route)){ route=r; heat=null; renderLayerInfo(); draw(); }
+    const zz=v&&Array.isArray(v.zone)&&v.zone.length===3&&v.zone.every(n=>typeof n==="number")?v.zone:null;
+    if(k===mapKey&&JSON.stringify(zz)!==JSON.stringify(zone)){ zone=zz; renderLayerInfo(); if(zz){ $("zphase").value=String(zz[2]); } draw(); } },()=>{});
+}
+
+// ---------- çember tahmini ----------
+// Yarıçaplar (m) 415 örnek maçın telemetrisinden; her haritada maçtan maça sabit.
+const RADII={"Deston":[1921,1056,634,380,247,161,104,68],"Erangel":[1921,1056,634,380,247,161,104,68],"Karakin":[821,575,345,207,124,62,31,16],"Miramar":[1921,1056,634,380,247,161,104,68],"Paramo":[1063,691,380,190,95,47,24],"Rondo":[1921,1056,634,380,247,161,104,68],"Sanhok":[1467,1027,616,308,154,77,39,19],"Taego":[1921,1056,634,380,247,161,104,68],"Vikendi":[1921,1056,634,380,247,161,104,68]};
+let zone=null, zoneMode=false;
+function interArea(a,b,d){
+  if(d>=a+b) return 0; if(d<=Math.abs(a-b)) return Math.PI*Math.min(a,b)**2;
+  const a2=a*a,b2=b*b; const al=Math.acos((d*d+a2-b2)/(2*d*a)), be=Math.acos((d*d+b2-a2)/(2*d*b));
+  return a2*al+b2*be-.5*Math.sqrt(Math.max(0,(-d+a+b)*(d+a-b)*(d-a+b)*(d+a+b))); }
+function zoneInfo(){ if(!zone) return null; const r=RADII[mapKey]; if(!r) return null; const i=zone[2];
+  if(i<1||i>=r.length) return null; const rc=r[i-1], rn=r[i], a=rc-rn; return {rc,rn,a,core:Math.max(0,rn-a)}; }
+function pInside(d,z){ return Math.min(1,interArea(z.a,z.rn,d)/(Math.PI*z.a*z.a)); }
+// Uçak rotası eğilimi: 415 maçta çapraz doğrulamayla bulunan katsayılar (1.->2. ve 2.->3. çember). 3. çemberden sonra etki yok.
+const BETA={1:0.75,2:0.5};
+let zbias=null;
+// Su maskesi: harita görselinden 128x128 (her hücre ~64 m). 270 maçta çember merkezi suya %0,4 düştü (rastgele %7).
+const wmask={};
+function isWater(x,y){ const D=intel&&intel[mapKey]; if(!D||!D.water) return false;
+  let m=wmask[mapKey]; if(!m){ const b=atob(D.water); m=new Uint8Array(b.length); for(let i=0;i<b.length;i++) m[i]=b.charCodeAt(i); wmask[mapKey]=m; }
+  const i=Math.floor(x/D.w*128), j=Math.floor(y/D.w*128); if(i<0||j<0||i>=128||j>=128) return true;
+  const k=j*128+i; return ((m[k>>3]>>(7-(k&7)))&1)===1; }
+function zoneBias(){
+  const z=zoneInfo(); if(!z) return null;
+  const key=JSON.stringify([zone,route,mapKey,!!intel]); if(zbias&&zbias.key===key) return zbias.none?null:zbias;
+  let b=0, ux=0, uy=0;
+  if(route&&BETA[zone[2]]){ const [x1,y1,x2,y2]=route, dx=x2-x1, dy=y2-y1, t=((zone[0]-x1)*dx+(zone[1]-y1)*dy)/(dx*dx+dy*dy||1);
+    ux=x1+t*dx-zone[0]; uy=y1+t*dy-zone[1]; const L=Math.hypot(ux,uy); if(L>=1){ ux/=L; uy/=L; b=BETA[zone[2]]; } }
+  const S=[]; let W=0, mx=0, my=0, wet=0, all=0;
+  for(let i=-18;i<=18;i++) for(let j=-18;j<=18;j++){ const gx=i/18, gy=j/18; if(gx*gx+gy*gy>1) continue;
+    const px=zone[0]+gx*z.a, py=zone[1]+gy*z.a, wa=isWater(px,py); all++; if(wa) wet++;
+    const w=(wa?0.02:1)*Math.exp(b*(gx*ux+gy*uy)); S.push([px,py,w]); W+=w; mx+=w*gx; my+=w*gy; }
+  if(wet===all){ zbias={key,none:true}; return null; }
+  zbias={key,S,W,ux,uy,b,wet:wet/all,ex:zone[0]+mx/W*z.a,ey:zone[1]+my/W*z.a,z}; return zbias;
+}
+function pAt(x,y){ const z=zoneInfo(); if(!z) return null; const zb=zoneBias();
+  if(!zb) return pInside(Math.hypot(x-zone[0],y-zone[1]),z);
+  let s=0; const r2=z.rn*z.rn; for(const c of zb.S){ const dx=x-c[0], dy=y-c[1]; if(dx*dx+dy*dy<=r2) s+=c[2]; } return s/zb.W; }
+function fillPhases(){ const r=RADII[mapKey]||[]; const el=$("zphase"); const cur=el.value;
+  el.innerHTML=r.slice(0,-1).map((v,i)=>`<option value="${i+1}">${i+1}. (r ${v} m)</option>`).join("");
+  if(cur&&+cur<r.length) el.value=cur; }
+function drawZoneBiased(z,zb){
+  const [cx,cy]=toS(zone[0],zone[1]), sc=view.s, R=z.a+z.rn, N=70;
+  if(!zb.cv){ const c=document.createElement("canvas"); c.width=N; c.height=N; const x=c.getContext("2d"), im=x.createImageData(N,N);
+    for(let j=0;j<N;j++) for(let i=0;i<N;i++){ const wx=zone[0]-R+(i+.5)*2*R/N, wy=zone[1]-R+(j+.5)*2*R/N; const p=pAt(wx,wy); if(p<.01) continue;
+      im.data.set([Math.round(230-170*p),Math.round(60+150*p),Math.round(50+60*p),Math.round(255*(.18+.22*p))],(j*N+i)*4); }
+    x.putImageData(im,0,0); zb.cv=c; }
+  ctx.save(); ctx.imageSmoothingEnabled=true; ctx.drawImage(zb.cv,cx-R*sc,cy-R*sc,2*R*sc,2*R*sc);
+  const ring=(px,py,rad,col,w,dash)=>{ ctx.setLineDash(dash||[]); ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=w+2.5; ctx.beginPath(); ctx.arc(px,py,rad*sc,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle=col; ctx.lineWidth=w; ctx.beginPath(); ctx.arc(px,py,rad*sc,0,Math.PI*2); ctx.stroke(); };
+  ring(cx,cy,z.rc,"#FFFFFF",2);
+  if(z.core>0) ring(cx,cy,z.core,C["--ok"],2.5);
+  ctx.setLineDash([]); ctx.fillStyle="#FFFFFF"; ctx.beginPath(); ctx.arc(cx,cy,3.5,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+let zview=ls.get("sq-zview","yon");
+const DIRS=["Doğu","Güneydoğu","Güney","Güneybatı","Batı","Kuzeybatı","Kuzey","Kuzeydoğu"];
+function sectorMass(zb){ const m=new Array(8).fill(0);
+  for(const c of zb.S){ const dx=c[0]-zone[0], dy=c[1]-zone[1]; if(dx*dx+dy*dy<1) { for(let k=0;k<8;k++) m[k]+=c[2]/8; continue; }
+    const ang=Math.atan2(dy,dx); const k=Math.floor(((ang+Math.PI/8)+4*Math.PI)%(2*Math.PI)/(Math.PI/4))%8; m[k]+=c[2]; }
+  return m.map(v=>v/zb.W); }
+function drawSectors(z,zb){
+  const [cx,cy]=toS(zone[0],zone[1]), sc=view.s, A=z.a*sc, m=sectorMass(zb), mx=Math.max(...m), best=m.indexOf(mx);
+  ctx.save();
+  for(let k=0;k<8;k++){ const a0=k*Math.PI/4-Math.PI/8, a1=a0+Math.PI/4, rel=m[k]/mx;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,A,a0,a1); ctx.closePath();
+    ctx.fillStyle=`rgba(232,178,58,${m[k]<.005?0.04:.12+.5*rel*rel})`; ctx.fill();
+    ctx.strokeStyle="rgba(0,0,0,.5)"; ctx.lineWidth=1; ctx.stroke(); }
+  // en olası dilim vurgusu
+  { const a0=best*Math.PI/4-Math.PI/8; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,A,a0,a0+Math.PI/4); ctx.closePath(); ctx.strokeStyle="#FFFFFF"; ctx.lineWidth=2.5; ctx.stroke(); }
+  const ring=(rad,col,w,dash)=>{ ctx.setLineDash(dash||[]); ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=w+2.5; ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle=col; ctx.lineWidth=w; ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.stroke(); };
+  ring(z.rc*sc,"#FFFFFF",2); ring(A,"rgba(255,255,255,.75)",1.2,[5,4]);
+  if(z.core>0) ring(z.core*sc,C["--ok"],2);
+  ctx.setLineDash([]); ctx.font="700 12px JetBrains Mono, monospace"; ctx.textAlign="center";
+  for(let k=0;k<8;k++){ const am=k*Math.PI/4, lx=cx+Math.cos(am)*A*.68, ly=cy+Math.sin(am)*A*.68; const t="%"+Math.round(m[k]*100);
+    const tw=ctx.measureText(t).width+8; ctx.fillStyle="rgba(14,19,17,.85)"; ctx.fillRect(lx-tw/2,ly-9,tw,17);
+    ctx.fillStyle= k===best?"#FFFFFF":"rgba(255,255,255,.75)"; ctx.fillText(t,lx,ly+4); }
+  ctx.fillStyle="#FFFFFF"; ctx.beginPath(); ctx.arc(cx,cy,3.5,0,Math.PI*2); ctx.fill(); ctx.restore();
+  return {m,best};
+}
+function drawZone(){
+  const z=zoneInfo(); if(!z) return; const zb=zoneBias();
+  if(zb&&zview==="yon"){ drawSectors(z,zb); return; }
+  if(zb&&(zb.b||zb.wet>0)){ drawZoneBiased(z,zb); return; }
+  const [cx,cy]=toS(zone[0],zone[1]); const sc=view.s;
+  const outer=(z.a+z.rn)*sc; const g=ctx.createRadialGradient(cx,cy,0,cx,cy,Math.max(1,outer));
+  for(let k=0;k<=24;k++){ const d=(z.a+z.rn)*k/24, p=pInside(d,z);
+    const r=Math.round(230-170*p), gg=Math.round(60+150*p), b=Math.round(50+60*p);
+    g.addColorStop(k/24,`rgba(${r},${gg},${b},${p<.01?0:.18+.22*p})`); }
+  ctx.save(); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,outer,0,Math.PI*2); ctx.fill();
+  const ring=(rad,col,w,dash)=>{ ctx.setLineDash(dash||[]); ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=w+2.5; ctx.beginPath(); ctx.arc(cx,cy,rad*sc,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle=col; ctx.lineWidth=w; ctx.beginPath(); ctx.arc(cx,cy,rad*sc,0,Math.PI*2); ctx.stroke(); };
+  ring(z.rc,"#FFFFFF",2);
+  [.75,.5,.25].forEach(p=>{ let lo=0,hi=z.a+z.rn; for(let it=0;it<40;it++){ const m=(lo+hi)/2; if(pInside(m,z)>p) lo=m; else hi=m; }
+    ring(lo,"rgba(255,255,255,.55)",1,[4,5]);
+    ctx.setLineDash([]); ctx.font="600 11px JetBrains Mono, monospace"; ctx.textAlign="left"; const tx=cx+lo*sc+4, ty=cy-4;
+    ctx.fillStyle="rgba(14,19,17,.8)"; ctx.fillRect(tx-2,ty-11,34,15); ctx.fillStyle="#FFFFFF"; ctx.fillText("%"+Math.round(p*100),tx,ty); });
+  if(z.core>0) ring(z.core,C["--ok"],2.5);
+  ctx.setLineDash([]); ctx.fillStyle="#FFFFFF"; ctx.beginPath(); ctx.arc(cx,cy,3.5,0,Math.PI*2); ctx.fill(); ctx.restore();
+}
+
+// ---------- sekmeler ----------
+let tab=ls.get("sq-tab","isaret");
+function layerForTab(){ if(tab==="inis") return "land"; if(tab==="cember") return (zview==="fin"||zview==="late")?zview:"zone"; return ""; }
+function setTab(t){
+  tab=t; ls.set("sq-tab",t);
+  [...$("tabs").children].forEach(b=>b.setAttribute("aria-selected",String(b.dataset.t===t)));
+  document.querySelectorAll(".pane").forEach(p=>p.hidden=p.dataset.pane!==t);
+  routeMode=0; zoneMode=false; $("routeBtn").classList.remove("on"); $("zoneBtn").classList.remove("on");
+  layer=layerForTab(); heat=null; renderLayerInfo(); draw();
+}
+
+// ---------- analiz katmanları ----------
+let intel=null, layer=ls.get("sq-layer",""), route=null, routeMode=0, routeTmp=null, heat=null;
+fetch("intel.json").then(r=>r.ok?r.json():null).then(j=>{ intel=j; heat=null; renderLayerInfo(); draw(); }).catch(()=>{ $("layerinfo").textContent="Analiz verisi yüklenemedi."; });
+const G=48;
+function lineGeom(x1,y1,x2,y2,w){ const a=Math.atan2(y2-y1,x2-x1); const L=Math.hypot(x2-x1,y2-y1)||1;
+  const off=((y2-y1)*(w/2)-(x2-x1)*(w/2)+x2*y1-y2*x1)/L; return {a,off,L}; }
+function distLine(px,py,r){ const [x1,y1,x2,y2]=r, L=Math.hypot(x2-x1,y2-y1)||1; return Math.abs((y2-y1)*px-(x2-x1)*py+x2*y1-y2*x1)/L; }
+function splat(grid,w,x,y,rad,val,seen){ const cell=w/G, r=Math.ceil(rad/cell); const cx=Math.floor(x/cell), cy=Math.floor(y/cell);
+  for(let j=cy-r;j<=cy+r;j++) for(let i=cx-r;i<=cx+r;i++){ if(i<0||j<0||i>=G||j>=G) continue;
+    const dx=(i+.5)*cell-x, dy=(j+.5)*cell-y; if(dx*dx+dy*dy>rad*rad) continue; const k=j*G+i; if(seen){ if(seen.has(k)) continue; seen.add(k);} grid[k]+=val; } }
+function similarMatches(D){
+  if(!route) return D.m;
+  const w=D.w, me=lineGeom(...route,w);
+  const sc=D.m.map(m=>{ const g=lineGeom(m[0],m[1],m[2],m[3],w);
+    let da=Math.abs(g.a-me.a)%Math.PI; da=Math.min(da,Math.PI-da)*180/Math.PI;
+    let off=g.off, a2=Math.abs(((g.a-me.a)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI); if(a2>Math.PI/2) off=-off;
+    return [Math.abs(off-me.off)/1000+da/30, m]; }).sort((a,b)=>a[0]-b[0]);
+  return sc.slice(0,Math.min(15,sc.length)).map(x=>x[1]);
+}
+function computeHeat(){
+  const D=intel&&intel[mapKey]; if(!D||!layer) return null;
+  const w=D.w, grid=new Float32Array(G*G); let info={}, sugg=[];
+  if(layer==="land"){
+    const ms=similarMatches(D);
+    ms.forEach(m=>{ const s=m[4]; for(let i=0;i<s.length;i+=3) splat(grid,w,s[i],s[i+1],300,1,new Set()); });
+    for(let k=0;k<grid.length;k++) grid[k]/=ms.length;
+    info={k:ms.length,n:D.n};
+    if(route){
+      const pop=new Float32Array(G*G); D.m.forEach(m=>{ const s=m[4]; for(let i=0;i<s.length;i+=3) splat(pop,w,s[i],s[i+1],300,1,new Set()); });
+      const nz=[...pop].filter(v=>v>0).sort((a,b)=>a-b); const thr=nz.length?nz[Math.floor(nz.length*.6)]:0;
+      const cell=w/G, cand=[];
+      for(let j=0;j<G;j++) for(let i=0;i<G;i++){ const k=j*G+i, x=(i+.5)*cell, y=(j+.5)*cell;
+        if(pop[k]>=thr && distLine(x,y,route)<=D.p90) cand.push([grid[k],-pop[k],x,y]); }
+      cand.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+      for(const c of cand){ if(sugg.length>=5) break; if(sugg.every(s=>Math.hypot(s.x-c[2],s.y-c[3])>=700)) sugg.push({x:c[2],y:c[3],v:c[0]}); }
+    }
+    return {grid,max:2,abs:true,info,sugg};
+  }
+  const pts= layer==="fin"? D.fin : D.late, rad= layer==="fin"? 500 : 250;
+  pts.forEach(p=>splat(grid,w,p[0],p[1],rad,1,null));
+  let mx=0; for(const v of grid) mx=Math.max(mx,v);
+  return {grid,max:mx||1,abs:false,info:{n:D.n},sugg:[]};
+}
+function heatCanvas(h){
+  const c=document.createElement("canvas"); c.width=G; c.height=G; const x=c.getContext("2d"), im=x.createImageData(G,G);
+  for(let k=0;k<G*G;k++){ const v=Math.min(1,h.grid[k]/h.max); if(h.grid[k]<(h.abs?.15:h.max*.25)) continue;
+    const r=Math.round(255-25*v), g=Math.round(220-190*v), b=Math.round(60-30*v), a=Math.round(255*(.25+.5*v));
+    im.data.set([r,g,b,a],k*4); }
+  x.putImageData(im,0,0); return c;
+}
+function drawLayer(x0,y0,x1,y1){
+  if(layer==="zone"){ drawZone(); drawRoute(); return; }
+  if(!layer||!intel) { drawRoute(); return; }
+  if(!heat){ heat=computeHeat(); if(heat) heat.cv=heatCanvas(heat); renderLayerInfo(); }
+  if(heat){ ctx.save(); ctx.imageSmoothingEnabled=true; ctx.drawImage(heat.cv,x0,y0,x1-x0,y1-y0); ctx.restore(); }
+  if(layer==="fin"&&intel[mapKey]){ ctx.save(); ctx.strokeStyle="rgba(120,220,255,.85)"; ctx.lineWidth=1.5;
+    intel[mapKey].fin.forEach(f=>{ const [sx,sy]=toS(f[0],f[1]); ctx.beginPath(); ctx.arc(sx,sy,Math.max(3,f[2]*view.s),0,Math.PI*2); ctx.stroke(); }); ctx.restore(); }
+  drawRoute();
+  if(heat&&heat.sugg.length){ heat.sugg.forEach((s,i)=>{ const [sx,sy]=toS(s.x,s.y);
+    ctx.fillStyle="rgba(14,19,17,.85)"; ctx.strokeStyle=C["--ok"]; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(sx,sy,12,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=C["--ok"]; ctx.font="700 13px JetBrains Mono, monospace"; ctx.textAlign="center"; ctx.fillText(String(i+1),sx,sy+4.5); }); }
+}
+function drawRoute(){
+  const r=route|| (routeTmp?[routeTmp[0],routeTmp[1],routeTmp[0],routeTmp[1]]:null); if(!r) return;
+  const [ax,ay]=toS(r[0],r[1]),[bx,by]=toS(r[2],r[3]);
+  ctx.save(); ctx.strokeStyle="rgba(0,0,0,.6)"; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+  ctx.strokeStyle="#FFFFFF"; ctx.lineWidth=2.5; ctx.setLineDash([10,6]); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle="#FFFFFF"; ctx.beginPath(); ctx.arc(ax,ay,5,0,Math.PI*2); ctx.fill();
+  if(route){ const a=Math.atan2(by-ay,bx-ax); ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx-14*Math.cos(a-.4),by-14*Math.sin(a-.4)); ctx.lineTo(bx-14*Math.cos(a+.4),by-14*Math.sin(a+.4)); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+function renderLayerInfo(){
+  $("landctl").hidden= !(tab==="inis"||(tab==="cember"&&layer==="zone")); $("zonectl").hidden= layer!=="zone"; $("layerinfo").hidden= !(tab==="inis"||tab==="cember");
+  if(layer==="zone"){ fillPhases(); const el=$("layerinfo"), z=zoneInfo();
+    if(!z){ el.innerHTML=`<span>Oyundaki beyaz çemberin kaçıncı çember olduğunu seç, sonra "Merkezine tıkla" ile haritada merkezini işaretle.</span><span>Çemberin yeri önceden bilinemez; bu katman her noktanın bir sonraki çemberde kalma olasılığını hesaplar.</span>`; return; }
+    const half=Math.round(pInside(z.rc/2,z)*100); const zb=zoneBias(); const hasB=BETA[zone[2]];
+    if(zb&&zview==="yon"){ const m=sectorMass(zb), mx=Math.max(...m), best=m.indexOf(mx);
+      const order=m.map((v,k)=>[v,k]).sort((a,b)=>b[0]-a[0]); const top2=order[0][0]+order[1][0];
+      const used=[zb.b?"uçak rotası":null, zb.wet>0?"su":null].filter(Boolean);
+      el.innerHTML=`<span><b>${zone[2]+1}. çember</b> için en olası yön: <b>${DIRS[best]} %${Math.round(mx*100)}</b> (rastgele olsa %12,5). İkinci: ${DIRS[order[1][1]]} %${Math.round(order[1][0]*100)}.</span>`+
+        `<span>Kesikli halka: yeni merkezin gidebileceği sınır (${z.a} m).${z.core>0?` <b style="color:var(--ok)">Yeşil halka</b>: yön ne olursa olsun güvenli (${z.core} m).`:``}</span>`+
+        `<span>${used.length?`Hesaba katılan: ${used.join(" ve ")}. `:`Rota çizilmedi, alanda su yok: tüm yönler eşit. `}Doğruluk: ${zone[2]===1?"%69":zone[2]===2?"%65":"bu fazda yön tahmini zayıf"}${zone[2]<=2?" (rastgele %50)":""}.</span>`;
+      return; }
+    if(zb){ const sh=Math.round(Math.hypot(zb.ex-zone[0],zb.ey-zone[1]));
+      const used=[zb.b?"uçak rotası":null, zb.wet>0?"su (merkez suya düşmüyor)":null].filter(Boolean).join(" ve ");
+      el.innerHTML=`<span>Tahmin edilen: <b>${zone[2]+1}. çember</b>, r ${z.rn} m. Hesaba katılan: <b>${used}</b>.</span>`+
+      (zb.wet>0?`<span>İzin verilen alanın %${Math.round(zb.wet*100)}'i su; o kısım merkez adayı sayılmadı.</span>`:``)+
+      `<span>Yeşil–kırmızı renk: her noktanın sonraki çemberde kalma olasılığı.</span>`+
+      (z.core>0?`<span><b style="color:var(--ok)">Yeşil halka</b>: kesin güvenli bölge (merkeze ${z.core} m).</span>`:``)+
+      `<span>Doğruluk (415 maç): ${zone[2]===1?"2. çemberde %69":zone[2]===2?"3. çemberde %65":"bu fazda rota etkisi yok; sadece su kuralı geçerli"} (rastgele %50). Kesin değil, olasılık.</span>`+
+      `<span>Fare imleci altında o noktanın olasılığı sağ altta yazar.</span>`;
+      return; }
+    el.innerHTML=(hasB&&!route?`<span style="color:var(--mortar)">Uçak rotasını çizersen bu çember için tahmin iyileşir (rota tarafına kayma eğilimi var).</span>`:``)+`<span>Tahmin edilen: <b>${zone[2]+1}. çember</b>, r ${z.rn} m. Merkezi şu anki merkeze en fazla ${z.a} m uzakta olabilir.</span>`+
+      (z.core>0?`<span><b style="color:var(--ok)">Yeşil halka</b>: kesin güvenli bölge. Merkeze ${z.core} m içindeki her nokta sonraki çemberde kalır.</span>`:`<span>Bu fazda kesin güvenli bölge yok.</span>`)+
+      `<span>Kesik halkalar: %75 / %50 / %25 ihtimalle içeride kalan sınırlar. Örnek: beyaz çemberin merkezi ile kenarının tam ortasındaki bir nokta %${half} ihtimalle içeride kalır.</span>`+
+      `<span>Fare imleci altında o noktanın olasılığı sağ altta yazar.</span><span>Kaynak: 415 maçlık telemetri. ${hasB?"":"Bu fazdan sonra çemberin yönü rastgele; rota etkisi yok."}</span>`;
+    return; }
+  const el=$("layerinfo"), D=intel&&intel[mapKey];
+  if(!layer){ el.innerHTML=""; return; }
+  if(!intel){ el.textContent="Analiz verisi yükleniyor…"; return; }
+  if(!D||!D.n){ el.textContent="Bu harita için veri yok."; return; }
+  const az= D.n<25? `<span style="color:var(--target)">Bu harita için sadece ${D.n} maç var; sonuçlar kaba.</span>`:"";
+  let h="";
+  if(layer==="land"){
+    const k=heat&&heat.info.k||D.n;
+    h=`<span>Renk: inişte 300 m içindeki ortalama rakip takım sayısı.</span><div class="scale"></div><div class="scalelbl"><span>0</span><span>1</span><span>2+</span></div>`;
+    h+= route? `<span>Rotası en çok benzeyen <b>${k}</b> maça göre. <b style="color:var(--ok)">Yeşil numaralar</b>: bu rotada sakin kalan, loot'u olan yerler.</span>`
+             : `<span>Tüm <b>${D.n}</b> maçın ortalaması. Uçak rotasını çizersen benzer rotalı maçlara göre hesaplar ve sakin nokta önerir.</span>`;
+    if(heat&&heat.sugg.length) h+=`<span>${heat.sugg.map((s,i)=>`<b>${i+1}</b>: ${s.v<.05?"<0,1":"~"+s.v.toFixed(1).replace(".",",")} takım`).join(" · ")}</span>`;
+  } else if(layer==="fin"){
+    h=`<span>${D.n} maçın son çemberleri (mavi halkalar) ve yoğunluğu. Turuncu-kırmızı alanlarda oyun daha sık bitiyor.</span>`;
+  } else {
+    h=`<span>${D.n} maçta ilk 3'e giren takımların oyunun son %40'ındaki konumları. Geç oyunda en çok tutulan bölgeler.</span>`;
+  }
+  el.innerHTML=h+az+`<span>Kaynak: son 14 günün ${D.n} squad-fpp maçı.</span>`;
+}
+$("tabs").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b) setTab(b.dataset.t); });
+$("routeBtn").onclick=()=>{ routeMode=1; routeTmp=null; $("routeBtn").classList.add("on"); toast("Haritada uçağın girdiği yere sol tıkla"); };
+$("routeClr").onclick=()=>{ route=null; routeMode=0; routeTmp=null; heat=null; $("routeBtn").classList.remove("on"); renderLayerInfo(); draw(); setMapShared(mapKey); };
+$("zoneBtn").onclick=()=>{ zoneMode=true; $("zoneBtn").classList.add("on"); toast("Haritada beyaz çemberin merkezine sol tıkla"); };
+$("zview").value=zview;
+$("zview").addEventListener("change",()=>{ zview=$("zview").value; ls.set("sq-zview",zview); layer=layerForTab(); heat=null; renderLayerInfo(); draw(); });
+$("zphase").addEventListener("change",()=>{ if(zone){ zone=[zone[0],zone[1],+$("zphase").value]; renderLayerInfo(); draw(); setMapShared(mapKey); } });
+setTab(tab);
+
+// ---------- input ----------
+let down=null;
+cv.addEventListener("contextmenu",e=>e.preventDefault());
+cv.addEventListener("pointerdown",e=>{ cv.setPointerCapture(e.pointerId); down={x:e.clientX,y:e.clientY,ox:view.ox,oy:view.oy,b:e.button,moved:false,shift:e.shiftKey}; });
+cv.addEventListener("pointermove",e=>{
+  const r=cv.getBoundingClientRect(),[wx,wy]=toW(e.clientX-r.left,e.clientY-r.top);
+  let ztxt=""; const zi=layer==="zone"&&zoneInfo(); if(zi){ ztxt=` · sonraki çemberde kalma %${Math.round(pAt(wx,wy)*100)}`; }
+  $("cur").textContent=inMap([wx,wy])?`x ${(wx/1000).toFixed(2)} km · y ${(wy/1000).toFixed(2)} km${ztxt}`:"";
+  if(!down) return; const dx=e.clientX-down.x,dy=e.clientY-down.y;
+  if(Math.hypot(dx,dy)>4) down.moved=true;
+  if(down.moved){ view.ox=down.ox+dx; view.oy=down.oy+dy; draw(); }
+});
+cv.addEventListener("pointerup",e=>{
+  if(!down) return; const d=down; down=null; if(d.moved) return;
+  const r=cv.getBoundingClientRect(), sx=e.clientX-r.left, sy=e.clientY-r.top, p=toW(sx,sy);
+  const hit=hitMark(sx,sy);
+  if(d.b===2){ if(hit) removeMark(hit); else if(inMap(p)) addMark(p); return; }
+  if(d.b===0&&zoneMode&&inMap(p)){
+    zone=[Math.round(p[0]),Math.round(p[1]),+$("zphase").value]; zoneMode=false; $("zoneBtn").classList.remove("on");
+    { const zi=zoneInfo(); if(zi){ view.s=Math.min(W,H)/(zi.rc*2.4); view.ox=W/2-zone[0]*view.s; view.oy=H/2-zone[1]*view.s; } }
+    renderLayerInfo(); draw(); setMapShared(mapKey); return; }
+  if(d.b===0&&routeMode&&inMap(p)){
+    if(routeMode===1){ routeTmp=p; routeMode=2; toast("Şimdi uçağın gittiği yöne, rotanın bitişine tıkla"); draw(); }
+    else { route=[Math.round(routeTmp[0]),Math.round(routeTmp[1]),Math.round(p[0]),Math.round(p[1])]; routeMode=0; routeTmp=null; heat=null;
+      $("routeBtn").classList.remove("on"); renderLayerInfo(); draw(); setMapShared(mapKey); }
+    return;
+  }
+  if(d.b===0){
+    if(tab!=="havan") return;
+    if(hit){ targetId=hit; freeTarget=null; }
+    else if(d.shift&&inMap(p)){ targetId=null; freeTarget={x:p[0],y:p[1]}; }
+    else if(inMap(p)){ mortar=p; }
+    updateAim();
+  }
+});
+cv.addEventListener("wheel",e=>{ e.preventDefault(); const r=cv.getBoundingClientRect(),sx=e.clientX-r.left,sy=e.clientY-r.top,[wx,wy]=toW(sx,sy);
+  const minS=Math.min(W,H)/(sizeKm*1000)*.8; view.s=Math.max(minS,Math.min(3,view.s*Math.exp(-e.deltaY*.0015)));
+  view.ox=sx-wx*view.s; view.oy=sy-wy*view.s; draw(); },{passive:false});
+function zoomMortar(){ if(!mortar) return; view.s=Math.min(W,H)/(MAX*2.3); view.ox=W/2-mortar[0]*view.s; view.oy=H/2-mortar[1]*view.s; draw(); }
+$("fit").onclick=fit; $("zoomM").onclick=zoomMortar;
+$("hdiff").addEventListener("input",updateAim);
+$("ttl").addEventListener("change",()=>{ ttlMin=+$("ttl").value; ls.set("sq-ttl",ttlMin); renderList(); draw(); });
+$("mapsel").addEventListener("change",()=>{ const k=$("mapsel").value; setMap(k); setMapShared(k); });
+$("gridop").value=String(gridOp);
+$("gridop").addEventListener("change",()=>{ gridOp=+$("gridop").value; ls.set("sq-grid",gridOp); draw(); });
+$("mapsel").value=mapKey; mapImg(mapKey);
+document.addEventListener("keydown",e=>{
+  if(["INPUT","SELECT"].includes(e.target.tagName)) return;
+  const k=e.key.toLowerCase(), map={"1":"dolu","2":"kamp","3":"arac","4":"temiz"};
+  if(map[k]){ kind=map[k]; ls.set("sq-kind",kind); renderControls(); }
+  else if(k==="f") fit(); else if(k==="z"){ if(tab!=="havan") setTab("havan"); zoomMortar(); }
+  else if(k==="escape"){ targetId=null; freeTarget=null; updateAim(); }
+});
+
+new ResizeObserver(()=>{ const first=!W; resize(); if(first) fit(); }).observe(stage);
+renderList(); updateAim();
+connect();
+$("copyLink").onclick=async()=>{ const u=location.href;
+  try{ await navigator.clipboard.writeText(u); toast("Link kopyalandı, Discord'a yapıştır"); }
+  catch(e){ prompt("Bu linki kopyala:",u); } };
+})();
+</script>
+
+</body>
+</html>
