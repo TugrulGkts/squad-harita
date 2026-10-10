@@ -306,7 +306,7 @@ let mapKey=MAPS[ls.get("sq-map","")]?ls.get("sq-map",""):"Erangel";
 let sizeKm=MAPS[mapKey], ttlMin=+ls.get("sq-ttl","5"), gridOp=+ls.get("sq-grid","0.7");
 const imgs={};
 function mapImg(k){
-  if(!imgs[k]){ const im=new Image(); im.onload=()=>draw(); im.onerror=()=>{ im.failed=true; }; im.src="maps/"+k+".jpg"; imgs[k]=im; }
+  if(!imgs[k]){ const im=new Image(); im.onload=()=>draw(); im.onerror=()=>{ im.failed=true; }; im.src=+k+".jpg"; imgs[k]=im; }
   return imgs[k];
 }
 function setMap(k){
